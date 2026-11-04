@@ -250,7 +250,7 @@ const Terminal = struct {
             backspace => Key.backspace,
             '\n' => Key.enter,
             else => switch (c) {
-                0...0x20 => Key{ .ctrl = c + (('a' | 0x1f) ^ 0x1f) },
+                0...0x1f => Key{ .ctrl = c + (('a' | 0x1f) ^ 0x1f) },
                 else => Key{ .char = c },
             },
         };

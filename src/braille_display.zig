@@ -9,7 +9,7 @@ pub const Point = struct {
 const BRAILLE_HEIGHT = 4;
 const BRAILLE_WIDTH = 2;
 
-const MAX_SCREEN_HEIGHT = 200;
+const MAX_SCREEN_HEIGHT = 400;
 const MAX_SCREEN_WIDTH = 2 * MAX_SCREEN_HEIGHT;
 
 pub const BrailleDisplay = struct {
@@ -73,12 +73,16 @@ pub const BrailleDisplay = struct {
         if (screen.rows > MAX_SCREEN_HEIGHT) {
             return error.OutOfBounds;
         }
-        var buffer: [16000]u8 = undefined;
+        var buffer: [5000]u8 = undefined;
         var writer = std.Io.File.Writer.initInterface(&buffer);
         for (0..screen.rows) |y| {
             try terminal.moveCursor(&writer, y + 1, 1);
             for (0..screen.cols) |x| {
                 try brailleCellPrint(&writer, self.screen[y][x]);
+                if (writer.end > 3 * buffer.len / 4) {
+                    try std.Io.File.stdout().writeStreamingAll(io, writer.buffered());
+                    writer.end = 0;
+                }
             }
         }
         try std.Io.File.stdout().writeStreamingAll(io, writer.buffered());
