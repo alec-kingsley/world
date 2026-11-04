@@ -6,6 +6,11 @@ const Ray = @import("ray.zig").Ray;
 
 const Plane = @import("plane.zig").Plane;
 
+pub const Intersection = struct {
+    dist: ?Scalar,
+    pixel: bool,
+};
+
 pub const Cube = struct {
     up: Vec3D,
     right: Vec3D,
@@ -30,9 +35,7 @@ pub const Cube = struct {
             .{ .x = self.up, .y = self.right };
     }
 
-    // Get {dist, should_display}
-    // dist will be null if it doesn't intersect
-    pub fn distance(self: *const Cube, ray: Ray) struct { dist: ?Scalar, pixel: bool } {
+    pub fn distance(self: *const Cube, ray: Ray) Intersection {
         var should_display: bool = false;
         var closest_dist: ?Scalar = null;
         for (self.faces) |face| {

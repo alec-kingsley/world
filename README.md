@@ -7,3 +7,7 @@ Movement - WASD
 Camera turning - HJKL
 
 Jump - space
+
+quit - q
+
+debug menu - f3

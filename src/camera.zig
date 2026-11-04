@@ -2,6 +2,7 @@ const Plane = @import("plane.zig").Plane;
 
 const Vec3D = @import("vec3d.zig").Vec3D;
 const Scalar = @import("scalar.zig").Scalar;
+const Angle = @import("angle.zig").Angle;
 
 pub const Camera = struct {
     pos: Vec3D,
@@ -16,5 +17,13 @@ pub const Camera = struct {
 
     pub fn moveRight(self: *Camera, dist: Scalar) void {
         self.pos = self.pos.plus(self.dir.right().timesScalar(dist));
+    }
+
+    pub fn lookDown(self: *Camera, angle: Angle) void {
+        self.dir = self.dir.rotateDown(angle);
+    }
+
+    pub fn lookRight(self: *Camera, angle: Angle) void {
+        self.dir = self.dir.rotateRight(angle);
     }
 };

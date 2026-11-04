@@ -17,11 +17,20 @@ const planck_dist = @import("scalar.zig").planck_distance;
 const Scalar = @import("scalar.zig").Scalar;
 const Vec3D = @import("vec3d.zig").Vec3D;
 
-pub fn engine(io: std.Io, key_queue: *Queue(Key)) !void {
+fn plot_crosshair(io: std.Io) !void {
+    const window_size = try terminal.getWindowSize();
+    var buffer: [1000]u8 = undefined;
+    var writer = std.Io.File.Writer.initInterface(&buffer);
+    try terminal.moveCursor(&writer, window_size.rows / 2, window_size.cols / 2);
+    _ = try writer.write("•");
+    try std.Io.File.stdout().writeStreamingAll(io, writer.buffered());
+}
+
+fn engine(io: std.Io, key_queue: *Queue(Key)) !void {
     const spin_speed = 0.08;
     const movement_speed = 0.2;
     const player_height = 1.2;
-    const world_gravity = 0.01;
+    const world_gravity = 0.015;
 
     const tick_ns = std.time.ns_per_ms * 20;
 
@@ -40,11 +49,12 @@ pub fn engine(io: std.Io, key_queue: *Queue(Key)) !void {
     var f3_menu = false;
 
     var velocity: Vec3D = .{ .x = 0.0, .y = 0.0, .z = 0.0 };
-    var last_ts_ns = std.Io.Timestamp.now(io, std.Io.Clock.real).nanoseconds;
+    var last_tick_ns = std.Io.Timestamp.now(io, std.Io.Clock.real).nanoseconds;
+    var last_frame_ns = last_tick_ns;
     while (true) {
         try world.render(io, display, camera);
         if (f3_menu) {
-            var buffer: [5000]u8 = undefined;
+            var buffer: [1000]u8 = undefined;
             var writer = std.Io.File.Writer.initInterface(&buffer);
             try terminal.moveCursor(&writer, 2, 1);
             _ = try writer.print("pos (x, y, z): ({}, {}, {})", .{ camera.pos.x, camera.pos.y, camera.pos.z });
@@ -52,17 +62,23 @@ pub fn engine(io: std.Io, key_queue: *Queue(Key)) !void {
             _ = try writer.print("dir (x, y, z): ({}, {}, {})", .{ camera.dir.x, camera.dir.y, camera.dir.z });
             try terminal.moveCursor(&writer, 4, 1);
             _ = try writer.print("vel (x, y, z): ({}, {}, {})", .{ velocity.x, velocity.y, velocity.z });
+            try terminal.moveCursor(&writer, 5, 1);
+            const frame_ns = std.Io.Timestamp.now(io, std.Io.Clock.real).nanoseconds;
+            const fps = @divTrunc(std.time.ns_per_s, (frame_ns - last_frame_ns));
+            last_frame_ns = frame_ns;
+            _ = try writer.print("fps: {}", .{fps});
             try std.Io.File.stdout().writeStreamingAll(io, writer.buffered());
+            try plot_crosshair(io);
         }
 
         var key: Key = undefined;
         while (try key_queue.get(io, (&key)[0..1], 0) == 1) {
             switch (key) {
                 .char => |c| switch (c) {
-                    'h' => camera.dir = camera.dir.rotateRight(-spin_speed),
-                    'j' => camera.dir = camera.dir.rotateDown(spin_speed),
-                    'k' => camera.dir = camera.dir.rotateDown(-spin_speed),
-                    'l' => camera.dir = camera.dir.rotateRight(spin_speed),
+                    'h' => camera.lookRight(-spin_speed),
+                    'j' => camera.lookDown(spin_speed),
+                    'k' => camera.lookDown(-spin_speed),
+                    'l' => camera.lookRight(spin_speed),
                     'w' => camera.moveForward(movement_speed),
                     'a' => camera.moveRight(-movement_speed),
                     's' => camera.moveForward(-movement_speed),
@@ -79,7 +95,7 @@ pub fn engine(io: std.Io, key_queue: *Queue(Key)) !void {
             }
         }
         const cur_ts_ns = std.Io.Timestamp.now(io, std.Io.Clock.real).nanoseconds;
-        const elapsed_ns = cur_ts_ns - last_ts_ns;
+        const elapsed_ns = cur_ts_ns - last_tick_ns;
         if (elapsed_ns >= tick_ns) {
             if (camera.pos.z < player_height + planck_dist and velocity.z < planck_dist) {
                 velocity.z = 0.0;
@@ -88,7 +104,7 @@ pub fn engine(io: std.Io, key_queue: *Queue(Key)) !void {
             }
             const elapsed_ticks = @divFloor(elapsed_ns, tick_ns);
             camera.pos.z += velocity.z * @as(Scalar, @floatFromInt(elapsed_ticks));
-            last_ts_ns = cur_ts_ns;
+            last_tick_ns = cur_ts_ns;
         }
     }
 }
