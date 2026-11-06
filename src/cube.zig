@@ -2,12 +2,13 @@ const std = @import("std");
 const vec3d = @import("vec3d.zig");
 const Vec3D = vec3d.Vec3D;
 const Scalar = @import("scalar.zig").Scalar;
+const planck_distance = @import("scalar.zig").planck_distance;
 const Ray = @import("ray.zig").Ray;
 
 const Plane = @import("plane.zig").Plane;
 
 pub const Intersection = struct {
-    dist: ?Scalar,
+    dist: Scalar,
     pixel: bool,
 };
 
@@ -35,7 +36,21 @@ pub const Cube = struct {
             .{ .x = self.up, .y = self.right };
     }
 
-    pub fn distance(self: *const Cube, ray: Ray) Intersection {
+    fn canIntersect(self: *const Cube, ray: Ray) bool {
+        // can only intersect if ray also intersects a sphere in which `self`
+        // is inscribed
+        const center_minus_ray_pos = self.center.minus(ray.pos);
+        const direct_dir = center_minus_ray_pos.normalize();
+        // A . B = |A| |B| cosθ
+        const angle = std.math.acos(ray.dir.dotProduct(direct_dir));
+        if (angle > std.math.pi / 2.0) return false;
+        if (angle < -std.math.pi / 2.0) return false;
+        const necessary_radius = center_minus_ray_pos.magnitude() * std.math.tan(angle);
+        return necessary_radius < self.length * std.math.sqrt(2) + planck_distance;
+    }
+
+    pub fn distance(self: *const Cube, ray: Ray) ?Intersection {
+        if (!self.canIntersect(ray)) return null;
         var should_display: bool = false;
         var closest_dist: ?Scalar = null;
         for (self.faces) |face| {
@@ -54,7 +69,8 @@ pub const Cube = struct {
                 }
             }
         }
-        return .{ .dist = closest_dist, .pixel = should_display };
+        if (closest_dist == null) return null;
+        return .{ .dist = closest_dist.?, .pixel = should_display };
     }
 
     pub fn init(gpa: std.mem.Allocator, center: Vec3D, length: Scalar) !*Cube {

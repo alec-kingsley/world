@@ -37,7 +37,11 @@ pub const Vec3D = struct {
     }
 
     pub fn dotProduct(self: Vec3D, other: Vec3D) Scalar {
-        return self.x * other.x + self.y * other.y + self.z * other.z;
+        const self_vec: @Vector(3, Scalar) = .{ self.x, self.y, self.z };
+        const other_vec: @Vector(3, Scalar) = .{ other.x, other.y, other.z };
+
+        const product = self_vec * other_vec;
+        return product[0] + product[1] + product[2];
     }
 
     pub fn crossProduct(self: Vec3D, other: Vec3D) Vec3D {

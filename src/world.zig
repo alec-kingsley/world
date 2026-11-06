@@ -1,8 +1,10 @@
 const std = @import("std");
 const Cube = @import("cube.zig").Cube;
+const Intersection = @import("cube.zig").Intersection;
 const Camera = @import("camera.zig").Camera;
 const BrailleDisplay = @import("braille_display.zig").BrailleDisplay;
 const ScreenPoint = @import("braille_display.zig").Point;
+const Vec3D = @import("vec3d.zig").Vec3D;
 
 const Scalar = @import("scalar.zig").Scalar;
 const Ray = @import("ray.zig").Ray;
@@ -13,7 +15,9 @@ const display_point_width: Scalar = planck_distance * 1.8;
 const render_distance: Scalar = 20.0;
 
 pub const World = struct {
-    cube: *Cube,
+    cubes: [32]*Cube,
+    cube_ct: u32,
+    gpa: std.mem.Allocator,
 
     pub fn render(self: *World, io: std.Io, braille_display: *BrailleDisplay, camera: Camera) !void {
         const unit_right = camera.dir.right();
@@ -35,9 +39,16 @@ pub const World = struct {
                     .pos = camera.pos,
                     .dir = camera.dir.plus(point).normalize(),
                 };
-                const pixel = self.cube.distance(ray);
-                if (pixel.dist) |_| {
-                    if (pixel.pixel) {
+                var closest_pixel: ?Intersection = null;
+                for (0..self.cube_ct) |i| {
+                    if (self.cubes[i].distance(ray)) |pixel| {
+                        if (closest_pixel == null or closest_pixel.?.dist > pixel.dist) {
+                            closest_pixel = pixel;
+                        }
+                    }
+                }
+                if (closest_pixel != null) {
+                    if (closest_pixel.?.pixel) {
                         braille_display.plotPoint(.{ .x = x, .y = y });
                     }
                 }
@@ -45,5 +56,27 @@ pub const World = struct {
             }
         }
         try braille_display.render(io);
+    }
+
+    pub fn spawn_cube(self: *World, center: Vec3D) !void {
+        if (self.cube_ct == self.cubes.len) {
+            return error.TooManyCubes;
+        }
+        self.cubes[self.cube_ct] = try Cube.init(self.gpa, center, 1.0);
+        self.cube_ct += 1;
+    }
+
+    pub fn init(gpa: std.mem.Allocator) !*World {
+        var world = try gpa.create(World);
+        world.gpa = gpa;
+        world.cube_ct = 0;
+        return world;
+    }
+
+    pub fn deinit(self: *World) void {
+        for (0..self.cube_ct) |i| {
+            self.gpa.destroy(self.cubes[i]);
+        }
+        self.gpa.destroy(self);
     }
 };

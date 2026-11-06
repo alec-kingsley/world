@@ -26,7 +26,11 @@ fn plot_crosshair(io: std.Io) !void {
     try std.Io.File.stdout().writeStreamingAll(io, writer.buffered());
 }
 
-fn engine(io: std.Io, key_queue: *Queue(Key)) !void {
+fn engine(
+    io: std.Io,
+    key_queue: *Queue(Key),
+    stopping: *std.atomic.Value(bool),
+) !void {
     const spin_speed = 0.08;
     const movement_speed = 0.2;
     const player_height = 1.2;
@@ -37,21 +41,21 @@ fn engine(io: std.Io, key_queue: *Queue(Key)) !void {
     const gpa = std.heap.page_allocator;
     const display = try bd.BrailleDisplay.init(gpa);
     defer display.deinit(gpa) catch {};
-    const cube = try Cube.init(gpa, vec3d.origin, 1.0);
-    defer cube.deinit();
     var camera = Camera{
         .pos = .{ .x = -3.0, .y = 0.0, .z = player_height },
-        .dir = .{ .x = 2.0, .y = 0.0, .z = -0.6 },
+        .dir = .{ .x = 2.0, .y = 0.0, .z = -0.8 },
     };
 
-    var world = World{ .cube = cube };
+    var world: *World = try .init(gpa);
+    defer world.deinit();
 
     var f3_menu = false;
 
     var velocity: Vec3D = .{ .x = 0.0, .y = 0.0, .z = 0.0 };
-    var last_tick_ns = std.Io.Timestamp.now(io, std.Io.Clock.real).nanoseconds;
+    var last_tick_ns = std.Io.Timestamp.now(io, .real).nanoseconds;
     var last_frame_ns = last_tick_ns;
-    while (true) {
+    var fps: u32 = 0;
+    while (!stopping.load(.acquire)) {
         try world.render(io, display, camera);
         if (f3_menu) {
             var buffer: [1000]u8 = undefined;
@@ -63,8 +67,13 @@ fn engine(io: std.Io, key_queue: *Queue(Key)) !void {
             try terminal.moveCursor(&writer, 4, 1);
             _ = try writer.print("vel (x, y, z): ({}, {}, {})", .{ velocity.x, velocity.y, velocity.z });
             try terminal.moveCursor(&writer, 5, 1);
-            const frame_ns = std.Io.Timestamp.now(io, std.Io.Clock.real).nanoseconds;
-            const fps = @divTrunc(std.time.ns_per_s, (frame_ns - last_frame_ns));
+            const frame_ns = std.Io.Timestamp.now(io, .real).nanoseconds;
+
+            // only give 20% of weight to latest measurement
+            fps *= 4;
+            fps += @intCast(@divTrunc(std.time.ns_per_s, (frame_ns - last_frame_ns)));
+            fps /= 5;
+
             last_frame_ns = frame_ns;
             _ = try writer.print("fps: {}", .{fps});
             try std.Io.File.stdout().writeStreamingAll(io, writer.buffered());
@@ -83,8 +92,8 @@ fn engine(io: std.Io, key_queue: *Queue(Key)) !void {
                     'a' => camera.moveRight(-movement_speed),
                     's' => camera.moveForward(-movement_speed),
                     'd' => camera.moveRight(movement_speed),
-                    ' ' => velocity.z = 0.2,
-                    'q' => break,
+                    ' ' => velocity.z = 0.25,
+                    'p' => try world.spawn_cube(camera.pos.plus(camera.dir.timesScalar(1.5))),
                     else => {},
                 },
                 .function => |f| switch (f) {
@@ -94,16 +103,16 @@ fn engine(io: std.Io, key_queue: *Queue(Key)) !void {
                 else => {},
             }
         }
-        const cur_ts_ns = std.Io.Timestamp.now(io, std.Io.Clock.real).nanoseconds;
+        const cur_ts_ns = std.Io.Timestamp.now(io, .real).nanoseconds;
         const elapsed_ns = cur_ts_ns - last_tick_ns;
         if (elapsed_ns >= tick_ns) {
+            const elapsed_ticks: Scalar = @as(Scalar, @floatFromInt(elapsed_ns)) / tick_ns;
             if (camera.pos.z < player_height + planck_dist and velocity.z < planck_dist) {
                 velocity.z = 0.0;
             } else {
-                velocity.z -= world_gravity;
+                velocity.z -= world_gravity * elapsed_ticks;
             }
-            const elapsed_ticks = @divFloor(elapsed_ns, tick_ns);
-            camera.pos.z += velocity.z * @as(Scalar, @floatFromInt(elapsed_ticks));
+            camera.pos.z += velocity.z * elapsed_ticks;
             last_tick_ns = cur_ts_ns;
         }
     }
@@ -115,11 +124,23 @@ pub fn main(init: std.process.Init) !void {
     defer terminal.terminal.disableRaw() catch {};
     var key_buf: [10]Key = undefined;
     var queue: Queue(Key) = .init(&key_buf);
-    var thread = try std.Thread.spawn(.{}, engine, .{ init.io, &queue });
-    thread.detach();
+    var stopping = std.atomic.Value(bool).init(false);
+    var thread = try std.Thread.spawn(
+        .{},
+        engine,
+        .{ init.io, &queue, &stopping },
+    );
+    defer {
+        stopping.store(true, .release);
+        thread.join();
+    }
     while (true) {
         const key = try terminal.terminal.getKey();
+
+        if (key == .char and key.char == 'q') {
+            break;
+        }
+
         try queue.putOne(init.io, key);
-        if (key == .char and key.char == 'q') break;
     }
 }
