@@ -11,3 +11,13 @@ Jump - space
 quit - q
 
 debug menu - f3
+
+## Building
+
+Build with
+
+```
+zig build --release=fast
+```
+
+and run `./zig-out/bin/main`
