@@ -15,8 +15,7 @@ const display_point_width: Scalar = planck_distance * 1.8;
 const render_distance: Scalar = 20.0;
 
 pub const World = struct {
-    cubes: [32]*Cube,
-    cube_ct: u32,
+    cubes: std.ArrayList(*Cube),
     gpa: std.mem.Allocator,
 
     pub fn render(self: *World, io: std.Io, braille_display: *BrailleDisplay, camera: Camera) !void {
@@ -40,8 +39,8 @@ pub const World = struct {
                     .dir = camera.dir.plus(point).normalize(),
                 };
                 var closest_pixel: ?Intersection = null;
-                for (0..self.cube_ct) |i| {
-                    if (self.cubes[i].distance(ray)) |pixel| {
+                for (self.cubes.items) |cube| {
+                    if (cube.distance(ray)) |pixel| {
                         if (closest_pixel == null or closest_pixel.?.dist > pixel.dist) {
                             closest_pixel = pixel;
                         }
@@ -59,24 +58,21 @@ pub const World = struct {
     }
 
     pub fn spawn_cube(self: *World, center: Vec3D) !void {
-        if (self.cube_ct == self.cubes.len) {
-            return error.TooManyCubes;
-        }
-        self.cubes[self.cube_ct] = try Cube.init(self.gpa, center, 1.0);
-        self.cube_ct += 1;
+        try self.cubes.append(self.gpa, try .init(self.gpa, center, 1.0));
     }
 
     pub fn init(gpa: std.mem.Allocator) !*World {
         var world = try gpa.create(World);
+        world.cubes = try std.ArrayList(*Cube).initCapacity(gpa, 32);
         world.gpa = gpa;
-        world.cube_ct = 0;
         return world;
     }
 
     pub fn deinit(self: *World) void {
-        for (0..self.cube_ct) |i| {
-            self.gpa.destroy(self.cubes[i]);
+        for (self.cubes.items) |cube| {
+            cube.deinit();
         }
+        self.cubes.deinit(self.gpa);
         self.gpa.destroy(self);
     }
 };

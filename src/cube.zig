@@ -45,8 +45,9 @@ pub const Cube = struct {
         const angle = std.math.acos(ray.dir.dotProduct(direct_dir));
         if (angle > std.math.pi / 2.0) return false;
         if (angle < -std.math.pi / 2.0) return false;
-        const necessary_radius = center_minus_ray_pos.magnitude() * std.math.tan(angle);
-        return necessary_radius < self.length * std.math.sqrt(2) + planck_distance;
+        const sphere_radius: Scalar = std.math.sqrt(2) * self.length;
+        const max_angle = std.math.atan(sphere_radius / center_minus_ray_pos.magnitude());
+        return @abs(angle) < max_angle;
     }
 
     pub fn distance(self: *const Cube, ray: Ray) ?Intersection {
